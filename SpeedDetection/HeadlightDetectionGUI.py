@@ -6,7 +6,9 @@ from itertools import combinations
 import tkinter as tk
 from tkinter import Canvas, Button, Label, PhotoImage, filedialog
 import cv2
+import csv
 from itertools import combinations
+from datetime import datetime
 from PIL import Image, ImageTk
 from HistogramCreator import HistogramGenerator
 from VideoPlayer import VideoPlayer
@@ -16,6 +18,7 @@ import imageToMatrix as test2
 import numpy as np
 from sklearn.cluster import DBSCAN
 import inspect
+import random
 import threading
 import sys
 from ContinuousHistogramSaver import ContinuousHistogramSaver
@@ -32,7 +35,8 @@ continuous_histogram_saver = ContinuousHistogramSaver(histogram_generator)
 current_dir = os.path.dirname(os.path.abspath(inspect.stack()[0][1]))
 assetsPath = os.path.join(current_dir, 'assets/frame0')
 download_button = None
-
+purple_line_start = None
+purple_line_end = None
 
 frame_capturer = getFrame()
 
@@ -132,21 +136,6 @@ def rewindVideo():
             showVideo(video_player, window, video_display)
 
 
-def downloadHistogram():
-    global video_player
-
-    if video_player is not None:
-        frame = video_player.getFrame()
-
-        if frame is not None:
-            save_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG files", "*.png")])
-
-            if save_path:
-                absolute_save_path = os.path.abspath(save_path)
-                histogram_generator.generate_histogram(frame, color=True, save_path=absolute_save_path)
-        else:
-            print("Video finished. Cannot generate histogram without a frame.")
-
 
 def live_stats_clicked():
     global video_player, video_canvas, liveStatistics, dumpData, download_button
@@ -177,7 +166,44 @@ def checkLineContinuity(line, threshold):
     distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     return distance > threshold
 
+def calculateSpeed(purple_line_start, purple_line_end):
+    if purple_line_start is not None and purple_line_end is not None:
+        # Calculate the length of the purple line
+        length_of_purple_line = calculate_length(purple_line_start[0], purple_line_start[1],
+                                                 purple_line_end[0], purple_line_end[1])
 
+        # Convert speed to km/h
+        speed_kmh = length_of_purple_line / (10000 * 1.5)
+
+        if speed_kmh > 60.00:
+            print("Illegal driving! Switching the Traffic Light Colors")
+
+            save_to_csv(datetime.now(), 4, speed_kmh)
+
+        return f"{speed_kmh:.2f} km/h"
+    else:
+        return "Unable to calculate speed"
+    
+def save_to_csv(timestamp, intersection_id, speed):
+    csv_file_path = "IllegalDrivers.csv"
+
+    # Check if the CSV file exists, create headers if it doesn't
+    is_new_file = not os.path.isfile(csv_file_path)
+    with open(csv_file_path, mode='a', newline='') as csv_file:
+        fieldnames = ['Timestamp', 'Intersection_ID', 'Speed (m/s)']
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+
+        if is_new_file:
+            writer.writeheader()
+
+        writer.writerow({
+            'Timestamp': timestamp,
+            'Intersection_ID': intersection_id,
+            'Speed (m/s)': speed
+        })
+
+    print(f"Frame information saved to {csv_file_path}")
+        
 def is_connected(line1, line2):
     x1, y1, x2, y2 = line1
     x3, y3, x4, y4 = line2
@@ -231,12 +257,16 @@ def identifyLanes(image_path, min_distance_factor=0.25):
             filtered_lines = filter_lines(lines, width, height, min_distance_factor)
 
             if len(filtered_lines) >= 2:
+                # Sort lines by length
                 filtered_lines = sorted(filtered_lines, key=line_length, reverse=True)
 
+                # Select the two longest non-parallel lines
                 longest_lines = select_two_longest_non_parallel(filtered_lines)
 
                 for l in longest_lines:
                     draw_line(frame, l)
+
+                # Draw the green symmetry line between the two identified lines
                 draw_symmetry_line(frame, longest_lines, canvas_width, canvas_height)
 
                 cv2.imwrite('final_image.png', frame)
@@ -246,6 +276,7 @@ def identifyLanes(image_path, min_distance_factor=0.25):
             print("Failed to read the image.")
 
     return frame
+
 
 def midpoint(p1, p2):
     return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
@@ -262,9 +293,10 @@ def extend_lines(lines, canvas_width, canvas_height):
     return extended_lines
 
 def draw_symmetry_line(frame, lines, canvas_width, canvas_height):
+    global purple_line_start, purple_line_end
     if len(lines) < 2:
         print("Not enough lines to draw symmetry line.")
-        return
+        return None, None  # Return None if not enough lines
 
     extended_lines = extend_lines(lines, canvas_width, canvas_height)
 
@@ -311,12 +343,10 @@ def draw_symmetry_line(frame, lines, canvas_width, canvas_height):
 
     length_of_purple_line = calculate_length(mirrored_purple_line_start[0], mirrored_purple_line_start[1],
                                              mirrored_purple_line_end[0], mirrored_purple_line_end[1])
+
     cv2.line(frame, (int(mirrored_purple_line_start[0]), int(mirrored_purple_line_start[1])), (int(mirrored_purple_line_end[0]), int(mirrored_purple_line_end[1])), (128, 0, 128), 2)
-    global speed_value
-    speed_value = f"{length_of_purple_line:.2f} units"
 
-    speed_label.config(text=f"Speed: {speed_value}")
-
+    purple_line_start, purple_line_end = mirrored_purple_line_start, mirrored_purple_line_end
 
 def mirror_point(point, line_point, line_direction):
     vector_to_point = np.array([point[0] - line_point[0], point[1] - line_point[1]])
@@ -573,19 +603,37 @@ def findRoadMiddle(lines, image_width):
     return None
 
 
+def process_frame(frame):
+    # Perform your image processing to identify lanes and obtain the 'lines' variable
+    lines = identifyLanes(frame, 0.30)
+
+    # Draw the symmetry line and get its coordinates
+    draw_symmetry_line(frame, lines, canvas_width, canvas_height)
+
+    # Perform your processing to calculate speed
+    calculated_speed = calculateSpeed(purple_line_start, purple_line_end)
+
+    # Update the speed label text
+    speed_label.config(text=f"Speed: {calculated_speed}")
+
 
 def dumpDataClicked():
-    global video_player, hldb
+    global video_player, purple_line_start, purple_line_end, hldb
 
     if video_player is not None:
         frame = video_player.getFrame()
 
         if frame is not None:
-            # Perform your processing to calculate speed
-            calculated_speed = calculateSpeed(frame)
+            # Save the frame to a temporary file
+            script_directory = os.path.dirname(os.path.abspath(inspect.stack()[0][1]))
+            frame_file_path = os.path.join(script_directory, "headlight_location.png")
+            cv2.imwrite(frame_file_path, frame)
+
+            # Process the frame and identify lanes
+            lines = identifyLanes(frame_file_path, 0.30)
 
             # Update the speed label text
-            speed_label.config(text=f"Speed: {calculated_speed}")
+            speed_label.config(text=f"Speed: {calculateSpeed(purple_line_start, purple_line_end)}")
 
             hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             lower_white = np.array([0, 0, 200], dtype=np.uint8)
@@ -627,9 +675,6 @@ def dumpDataClicked():
             image_with_lanes = identifyLanes(frame_with_red_dots_path, 0.30)
 
 
-# \brief Updates live stream button color
-# \return : None
-# \globals: None
 def updateLiveStreamButtonColor():
     global is_video_playing, is_paused
     button_color = "#FF0000" if is_video_playing and not is_paused[0] else "#FFFFFF"
