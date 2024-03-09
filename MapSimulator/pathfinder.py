@@ -26,11 +26,10 @@ class RouteView(App):
         # Use OpenRouteService API to fetch the route
         api_key = "5b3ce3597851110001cf62483878a54e67844685a1beda093eac41af"
         url = f"https://api.openrouteservice.org/v2/directions/driving-car?api_key={api_key}&start={lon1},{lat1}&end={lon2},{lat2}"
-
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
-            distance = distance = data['features'][0]['properties']['segments'][0]['distance']
+            distance = data['features'][0]['properties']['segments'][0]['distance']
             return distance
         else:
             print("Failed to fetch route")
@@ -55,5 +54,5 @@ class RouteView(App):
         mapview.canvas.add(map_line)
 
 
-if __name__ == "__main__":
-    RouteView().run()
+##if __name__ == "__main__":
+##    RouteView().run()

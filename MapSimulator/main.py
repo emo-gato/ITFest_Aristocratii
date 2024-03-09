@@ -22,21 +22,32 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return distance
 
 
-def find_nearest_building(victim_lat, victim_lon, victim_type):
+def find_nearest_building(mapview,marker_victim,victim_lat, victim_lon, victim_type):
     with open('markers_data.json') as f:
         markers_data = json.load(f)
 
+    nearest_building_distance_lat, nearest_building_distance_lon = 0,0
     nearest_building_name = None
     nearest_building_distance = float('inf')
+    instance_pathfinder = rv()
 
     for building in markers_data['features'][victim_type]:
         building_lat = building['lat']
         building_lon = building['lon']
-        distance = calculate_distance(victim_lat, victim_lon, building_lat, building_lon)
+        #print(f"Victim coordinates: Lat {victim_lat}, Lon {victim_lon}")
+        #print(f"Building coordinates: Lat {building_lat}, Lon {building_lon}")
+        distance =calculate_distance(victim_lat, victim_lon, building_lat, building_lon)
         if distance < nearest_building_distance:
+            nearest_building_distance_lat = building_lat
+            nearest_building_distance_lon = building_lon
             nearest_building_distance = distance
             nearest_building_name = building['name']
 
+    route_points = instance_pathfinder.fetch_route(victim_lat, victim_lon, nearest_building_distance_lat, nearest_building_distance_lon)
+    instance_pathfinder.draw_route(mapview, route_points)
+
+    if(route_points==[]): #in case the victim is not on an open street, it is not displayed
+        mapview.remove_marker(marker_victim)
     return nearest_building_name
 
 class MapApp(App):
@@ -118,7 +129,7 @@ class MapApp(App):
             lat = lat_center + lat_offset
             lon = lon_center + lon_offset
 
-            # Choose a random marker type
+
             victim_type = random.choice(["police_victim", "firemen_victim", "hospital_victim"])
 
             # Create a map marker based on the chosen type
@@ -134,15 +145,12 @@ class MapApp(App):
                 script_dir = os.path.dirname(os.path.abspath(__file__))
                 img_hospital_victim = os.path.join(script_dir, 'hospital_victim.png')
                 marker_victim = MapMarker(lat=lat, lon=lon, source=img_hospital_victim)
+
             mapview.add_marker(marker_victim)
-
-
-
-            nearest_building = find_nearest_building(lat,lon,re.sub(r'_victim$', '', victim_type))
+            nearest_building = find_nearest_building(mapview,marker_victim,lat,lon,re.sub(r'_victim$', '', victim_type))
             print("Nearest building for the victim:", nearest_building)
 
         Clock.schedule_interval(add_random_marker, 5)
-
         return mapview
 
 if __name__ == '__main__':
