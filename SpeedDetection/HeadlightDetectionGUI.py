@@ -6,6 +6,8 @@ from itertools import combinations
 import tkinter as tk
 from tkinter import Canvas, Button, Label, PhotoImage, filedialog
 import cv2
+import time
+import schedule
 import csv
 from itertools import combinations
 from datetime import datetime
@@ -37,6 +39,8 @@ assetsPath = os.path.join(current_dir, 'assets/frame0')
 download_button = None
 purple_line_start = None
 purple_line_end = None
+video_loaded = False
+
 
 frame_capturer = getFrame()
 
@@ -90,6 +94,8 @@ def openVideo(video_display, root):
         video_player = VideoPlayer(videoSource)
         liveStream.config(bg="#FF0000")
         showVideo(video_player, root, video_display)
+
+
 
 
 def openCam(video_display, root):
@@ -175,7 +181,7 @@ def calculateSpeed(purple_line_start, purple_line_end):
         # Convert speed to km/h
         speed_kmh = length_of_purple_line / (10000 * 1.5)
 
-        if speed_kmh > 60.00:
+        if speed_kmh > 61.50:
             print("Illegal driving! Switching the Traffic Light Colors")
 
             save_to_csv(datetime.now(), 4, speed_kmh)
@@ -183,14 +189,13 @@ def calculateSpeed(purple_line_start, purple_line_end):
         return f"{speed_kmh:.2f} km/h"
     else:
         return "Unable to calculate speed"
-    
+
+
 def save_to_csv(timestamp, intersection_id, speed):
     csv_file_path = "IllegalDrivers.csv"
-
-    # Check if the CSV file exists, create headers if it doesn't
     is_new_file = not os.path.isfile(csv_file_path)
     with open(csv_file_path, mode='a', newline='') as csv_file:
-        fieldnames = ['Timestamp', 'Intersection_ID', 'Speed (m/s)']
+        fieldnames = ['Timestamp', 'Intersection_ID', 'Speed (km/h)']
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
 
         if is_new_file:
@@ -199,7 +204,7 @@ def save_to_csv(timestamp, intersection_id, speed):
         writer.writerow({
             'Timestamp': timestamp,
             'Intersection_ID': intersection_id,
-            'Speed (m/s)': speed
+            'Speed (km/h)': "{:.2f}".format(round(speed, 2))
         })
 
     print(f"Frame information saved to {csv_file_path}")
@@ -536,20 +541,14 @@ def isLineInProximity(line, point):
 
 
 def is_dark_white(color):
-    return color[2] < 200  # Assuming the third channel (index 2) corresponds to intensity in BGR
+    return color[2] < 200
 
 def findContinuousParallelLines(frame, lines, image_height, image_width):
     if lines is not None and len(lines) > 0:
-        # Convert the lines to a more convenient format for processing
         lines = [line[0] for line in lines]
-
-        # Sort lines by their slope (angle with the horizontal axis)
         lines.sort(key=lambda l: np.arctan2(l[3] - l[1], l[2] - l[0]))
-
-        # Filter out horizontal or close-to-horizontal lines
         lines = [line for line in lines if abs(np.arctan2(line[3] - line[1], line[2] - line[0])) < 1.2]
 
-        # Filter lines that are at least half the screen height
         valid_lines = [line for line in lines if abs(line[3] - line[1]) > image_height / 2]
 
         return valid_lines
@@ -618,13 +617,12 @@ def process_frame(frame):
 
 
 def dumpDataClicked():
-    global video_player, purple_line_start, purple_line_end, hldb
+    global video_player, purple_line_start, purple_line_end, hldb, video_loaded
 
     if video_player is not None:
         frame = video_player.getFrame()
 
         if frame is not None:
-            # Save the frame to a temporary file
             script_directory = os.path.dirname(os.path.abspath(inspect.stack()[0][1]))
             frame_file_path = os.path.join(script_directory, "headlight_location.png")
             cv2.imwrite(frame_file_path, frame)
@@ -671,8 +669,14 @@ def dumpDataClicked():
             else:
                 print("No headlights detected.")
 
-
             image_with_lanes = identifyLanes(frame_with_red_dots_path, 0.30)
+
+def loadVideoClicked():
+    global video_loaded
+    global is_video_playing, is_paused
+    if is_video_playing and not is_paused[0]:
+        video_loaded = True
+        schedule.every(1).seconds.do(dumpDataClicked)
 
 
 def updateLiveStreamButtonColor():
@@ -717,6 +721,7 @@ video_display = Canvas(
 )
 video_display.place(x=354, y=141)
 
+
 video_canvas.create_rectangle(0.0, 0.0, 220.0, 612.0, fill="#9400D3", outline="")
 video_canvas.create_rectangle(220.0, 0.0, 928.0, 612.0, fill="#FFFFFF", outline="")
 
@@ -740,9 +745,6 @@ buttonImageDumpData = PhotoImage(file=relativeToAssets("button_4.png"))
 dumpData = Button(image=buttonImageDumpData, borderwidth=0, highlightthickness=0, command=dumpDataClicked, relief="flat")
 dumpData.place(x=19.1009521484375, y=325.5, width=187.29383850097656, height=51.49781799316406)
 
-buttonImageLiveStatistics = PhotoImage(file=relativeToAssets("button_5.png"))
-liveStatistics = Button(image=buttonImageLiveStatistics, borderwidth=0, highlightthickness=0, command=live_stats_clicked, relief="flat")
-liveStatistics.place(x=777.0, y=17.0, width=48.081729888916016, height=46.75)
 
 buttonImageLiveStream = PhotoImage(file=relativeToAssets("button_6.png"))
 liveStream = Button(image=buttonImageLiveStream, borderwidth=0, highlightthickness=0, command=lambda: openCam( video_display, window), relief="flat")
@@ -752,9 +754,8 @@ buttonImageLoadVideo = PhotoImage(file=relativeToAssets("button_7.png"))
 loadVideo = Button(image=buttonImageLoadVideo, borderwidth=0, highlightthickness=0, command=lambda: openVideo( video_display, window), relief="flat")
 loadVideo.place(x=19.0, y=208.0, width=187.29383850097656, height=51.49781799316406)
 
-buttonImageIdentifyStreet = PhotoImage(file=relativeToAssets("button_7.png"))
-identifyStreet = Button(image=buttonImageLoadVideo, borderwidth=0, highlightthickness=0, command=lambda: openVideo( video_display, window), relief="flat")
-identifyStreet.place(x=19.0, y=443.0, width=187.29383850097656, height=51.49781799316406)
 
 window.resizable(False, False)
+
+
 window.mainloop()
