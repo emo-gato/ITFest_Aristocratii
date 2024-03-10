@@ -75,8 +75,8 @@ class MapApp(App):
                                               location_type=location_type, locations=locations)
 
         # Add events
-        self.add_random_marker(mapview=mapview)
-        # Clock.schedule_interval(lambda dt: self.add_random_marker(mapview=mapview), 6)
+        # self.add_random_marker(mapview=mapview)
+        Clock.schedule_interval(lambda dt: self.add_random_marker(mapview=mapview), 6)
         # Returns the mapview
         return mapview
 
@@ -152,7 +152,7 @@ class MapApp(App):
         lon_center = TIMISOARA_LON
 
         # Radius in meters
-        radius = 4000
+        radius = 2000
 
         # Generate random coordinates within the specified radius
         r = radius * sqrt(random.uniform(0, 1))

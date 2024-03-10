@@ -118,7 +118,7 @@ class RouteView(App):
                         for x in stupid_arr:
                             requests.get(f"http://192.168.251.63/semaphore?s{x}={1}")
 
-                        # if intersection_dict[intersections_arr[i] == 49]:
+                        # if intersection_dict[intersections_arr[i]]  == 49:
                         #     stupid_arr = [0,1,2,3]
                         #     requests.get(f"http://192.168.251.63/semaphore?s{stupid_arr[orientation]}={2}")
                         #     print(orientation)
